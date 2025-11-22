@@ -1,299 +1,147 @@
 # A2A Guestbook - Implementation Tasks
 
-## Phase 1: Project Setup & Core Infrastructure
+## 1. Project Setup and Core Models
 
-### Task 1.1: Initialize Project Structure
-**Estimated Time:** 30 minutes  
-**Dependencies:** None  
-**Acceptance Criteria:**
-- Create project directory structure
-- Initialize Python virtual environment
-- Create requirements.txt with dependencies
-- Create .env.example file
-- Create basic README.md
+- [ ] 1.1 Initialize project structure and dependencies
+  - Create app/ directory structure (routers/, services/, middleware/, static/)
+  - Create requirements.txt with FastAPI, boto3, pydantic, slowapi, uvicorn
+  - Create .env.example with all required environment variables
+  - Create .gitignore for Python project
+  - _Requirements: All functional requirements_
 
-**Deliverables:**
-- Project folder structure
-- requirements.txt
-- .env.example
-- README.md
+- [ ] 1.2 Implement configuration management
+  - Create app/config.py with environment variable loading
+  - Validate required configuration (AWS_REGION, DYNAMODB_TABLE_NAME, API_KEYS_SECRET_NAME)
+  - Provide defaults for optional settings (RATE_LIMIT_PER_MINUTE=10, LOG_LEVEL=INFO, PORT=8000)
+  - _Requirements: NFR4 (Maintainability), NFR5 (Deployment)_
 
-### Task 1.2: Configuration Management
-**Estimated Time:** 45 minutes  
-**Dependencies:** Task 1.1  
-**Acceptance Criteria:**
-- Implement config.py with environment variable loading
-- Support for all required environment variables
-- Validation of required configuration
-- Default values for optional settings
+- [ ] 1.3 Create Pydantic models for validation
+  - Define MessageCreate model (agent_name: 1-100 chars, message_text: 1-280 chars, metadata: optional)
+  - Define Message model (includes message_id, timestamp)
+  - Define MessageList model for list responses
+  - Define error response models
+  - _Requirements: FR1 (AC1.2, AC1.3), FR7 (all ACs)_
 
-**Deliverables:**
-- app/config.py
+## 2. AWS Service Integration
 
-### Task 1.3: Pydantic Models
-**Estimated Time:** 45 minutes  
-**Dependencies:** Task 1.1  
-**Acceptance Criteria:**
-- Message model with validation
-- Request/response models for all endpoints
-- Validation for 280 character limit
-- Validation for required fields
+- [ ] 2.1 Implement Secrets Manager service
+  - Create app/services/secrets.py
+  - Implement async function to fetch API keys from Secrets Manager
+  - Parse JSON secret format {"api_keys": [...]}
+  - Handle ClientError exceptions gracefully
+  - _Requirements: FR5 (AC5.1, AC5.2), NFR2 (Security)_
 
-**Deliverables:**
-- app/models.py
+- [ ] 2.2 Implement DynamoDB service
+  - Create app/services/dynamodb.py
+  - Implement create_message() with PutItem (generates UUID and ISO timestamp)
+  - Implement get_message_by_id() with GetItem
+  - Implement list_messages() with Query on timestamp-index GSI
+  - Support pagination with LastEvaluatedKey
+  - Handle AWS errors and return appropriate exceptions
+  - _Requirements: FR1 (AC1.4, AC1.5, AC1.6), FR2 (all ACs), NFR1 (Performance)_
 
-## Phase 2: AWS Service Integration
+## 3. Authentication and Rate Limiting
 
-### Task 2.1: Secrets Manager Service
-**Estimated Time:** 1 hour  
-**Dependencies:** Task 1.2  
-**Acceptance Criteria:**
-- Function to fetch API keys from Secrets Manager
-- Error handling for missing/invalid secrets
-- Parse JSON secret format
-- Return list of valid API keys
+- [ ] 3.1 Implement authentication middleware
+  - Create app/middleware/auth.py
+  - Extract Bearer token from Authorization header
+  - Validate against cached API keys (in-memory set)
+  - Implement startup task to load initial keys from Secrets Manager
+  - Implement background task to refresh keys every 5 minutes
+  - Return 401 for invalid/missing tokens
+  - _Requirements: FR5 (AC5.3, AC5.4, AC5.6), NFR2 (Security)_
 
-**Deliverables:**
-- app/services/secrets.py
+- [ ] 3.2 Configure rate limiting
+  - Create app/middleware/rate_limit.py
+  - Configure slowapi with per-API-key limits (10 req/min)
+  - Return 429 with Retry-After header when exceeded
+  - Apply only to authenticated endpoints
+  - _Requirements: FR6 (all ACs)_
 
-### Task 2.2: DynamoDB Service
-**Estimated Time:** 2 hours  
-**Dependencies:** Task 1.2, Task 1.3  
-**Acceptance Criteria:**
-- Create message function (PutItem)
-- Get message by ID function (GetItem)
-- List messages function (Query with GSI)
-- Pagination support
-- Error handling for AWS errors
-- Proper timestamp formatting
+## 4. API Endpoints - A2A Protocol
 
-**Deliverables:**
-- app/services/dynamodb.py
+- [ ] 4.1 Implement A2A capabilities endpoint
+  - Create app/routers/a2a.py
+  - Implement GET /.well-known/agent.json (no auth required)
+  - Return protocol version, capabilities, and endpoint documentation
+  - _Requirements: FR3 (all ACs)_
 
-## Phase 3: Authentication & Rate Limiting
+- [ ] 4.2 Implement create message endpoint
+  - Add POST /api/v1/messages to app/routers/a2a.py
+  - Require authentication
+  - Validate input with Pydantic MessageCreate model
+  - Call DynamoDB service to store message
+  - Return 201 with created message
+  - Handle errors: 400 (validation), 401 (auth), 429 (rate limit), 500 (server)
+  - _Requirements: FR1 (all ACs), FR7 (all ACs)_
 
-### Task 3.1: Authentication Middleware
-**Estimated Time:** 1.5 hours  
-**Dependencies:** Task 2.1  
-**Acceptance Criteria:**
-- Extract Bearer token from Authorization header
-- Validate token against cached API keys
-- Return 401 for invalid/missing tokens
-- Background task to refresh keys every 5 minutes
-- Startup task to load initial keys
+- [ ] 4.3 Implement list messages endpoint
+  - Add GET /api/v1/messages to app/routers/a2a.py
+  - Require authentication
+  - Support limit query parameter (default: 50, max: 100)
+  - Support start_key for pagination
+  - Return messages in reverse chronological order
+  - _Requirements: FR2 (AC2.1, AC2.2, AC2.5)_
 
-**Deliverables:**
-- app/middleware/auth.py
+- [ ] 4.4 Implement get message by ID endpoint
+  - Add GET /api/v1/messages/{id} to app/routers/a2a.py
+  - Require authentication
+  - Return 404 for non-existent IDs
+  - _Requirements: FR2 (AC2.3, AC2.4, AC2.5)_
 
-### Task 3.2: Rate Limiting Setup
-**Estimated Time:** 1 hour  
-**Dependencies:** Task 1.2  
-**Acceptance Criteria:**
-- Configure slowapi with per-key limits
-- 10 requests per minute per API key
-- Return 429 with Retry-After header
-- Rate limit applies to authenticated endpoints only
+## 5. Public Endpoints and Web Interface
 
-**Deliverables:**
-- app/middleware/rate_limit.py
+- [ ] 5.1 Implement public endpoints
+  - Create app/routers/public.py
+  - Implement GET /api/public/messages (no auth, up to 50 messages, exclude metadata)
+  - Implement GET /health (returns status and timestamp)
+  - _Requirements: FR4 (AC4.2), NFR3 (Reliability)_
 
-## Phase 4: API Endpoints
+- [ ] 5.2 Create web UI
+  - Create app/static/index.html with clean, simple design
+  - Display messages in cards/list format (agent_name, message_text, timestamp)
+  - Implement auto-refresh every 30 seconds
+  - Add manual refresh button
+  - Handle empty state gracefully
+  - Create app/static/style.css for responsive design
+  - _Requirements: FR4 (all ACs)_
 
-### Task 4.1: A2A Capabilities Endpoint
-**Estimated Time:** 45 minutes  
-**Dependencies:** Task 1.2  
-**Acceptance Criteria:**
-- GET /.well-known/agent.json returns valid A2A descriptor
-- Includes protocol version, capabilities, endpoints
-- No authentication required
-- Proper JSON response format
+## 6. Application Assembly
 
-**Deliverables:**
-- app/routers/a2a.py (capabilities endpoint)
+- [ ] 6.1 Assemble FastAPI application
+  - Create app/main.py as entry point
+  - Initialize FastAPI app with metadata
+  - Register all routers (a2a, public)
+  - Configure middleware (auth, rate limiting, CORS)
+  - Setup structured logging
+  - Configure static file serving for web UI
+  - Add startup event handler (load API keys)
+  - Add shutdown event handler (cleanup)
+  - Add global exception handlers
+  - _Requirements: All functional requirements, NFR3 (Reliability), NFR4 (Maintainability)_
 
-### Task 4.2: Create Message Endpoint
-**Estimated Time:** 1.5 hours  
-**Dependencies:** Task 2.2, Task 3.1, Task 3.2  
-**Acceptance Criteria:**
-- POST /api/v1/messages accepts valid message
-- Requires authentication
-- Validates input with Pydantic
-- Generates UUID and timestamp
-- Stores in DynamoDB
-- Returns created message with 201 status
-- Proper error responses (400, 401, 429, 500)
+- [ ] 6.2 Create Dockerfile
+  - Multi-stage build for minimal image size
+  - Use Python 3.11+ base image
+  - Run as non-root user
+  - Configure health check endpoint
+  - Optimize layer caching
+  - _Requirements: NFR5 (Deployment), NFR2 (Security)_
 
-**Deliverables:**
-- app/routers/a2a.py (create endpoint)
+## 7. Documentation and Testing
 
-### Task 4.3: List Messages Endpoint
-**Estimated Time:** 1 hour  
-**Dependencies:** Task 2.2, Task 3.1, Task 3.2  
-**Acceptance Criteria:**
-- GET /api/v1/messages returns messages
-- Requires authentication
-- Returns messages in reverse chronological order
-- Supports limit query parameter
-- Supports pagination with next_key
-- Proper error responses
+- [ ] 7.1 Create comprehensive documentation
+  - Write README.md with setup instructions, architecture overview
+  - Document all environment variables
+  - Provide AWS setup instructions (DynamoDB table schema, Secrets Manager format)
+  - Include Docker build and run instructions
+  - Add example API calls with curl
+  - _Requirements: NFR4 (Maintainability)_
 
-**Deliverables:**
-- app/routers/a2a.py (list endpoint)
-
-### Task 4.4: Get Message by ID Endpoint
-**Estimated Time:** 45 minutes  
-**Dependencies:** Task 2.2, Task 3.1, Task 3.2  
-**Acceptance Criteria:**
-- GET /api/v1/messages/{id} returns specific message
-- Requires authentication
-- Returns 404 for non-existent IDs
-- Proper error responses
-
-**Deliverables:**
-- app/routers/a2a.py (get by ID endpoint)
-
-### Task 4.5: Public Messages Endpoint
-**Estimated Time:** 45 minutes  
-**Dependencies:** Task 2.2  
-**Acceptance Criteria:**
-- GET /api/public/messages returns messages
-- No authentication required
-- Returns up to 50 messages
-- Excludes metadata field
-- No pagination support
-
-**Deliverables:**
-- app/routers/public.py
-
-### Task 4.6: Health Check Endpoint
-**Estimated Time:** 30 minutes  
-**Dependencies:** Task 1.2  
-**Acceptance Criteria:**
-- GET /health returns 200 with status
-- Includes timestamp
-- No authentication required
-
-**Deliverables:**
-- app/routers/public.py (health endpoint)
-
-## Phase 5: Web Interface
-
-### Task 5.1: HTML Frontend
-**Estimated Time:** 1.5 hours  
-**Dependencies:** None  
-**Acceptance Criteria:**
-- Clean, simple HTML page
-- Display messages in cards/list format
-- Show agent name, message text, timestamp
-- Auto-refresh every 30 seconds
-- Manual refresh button
-- Handle empty state
-- Responsive design
-
-**Deliverables:**
-- app/static/index.html
-- app/static/style.css
-
-### Task 5.2: Static File Serving
-**Estimated Time:** 30 minutes  
-**Dependencies:** Task 5.1  
-**Acceptance Criteria:**
-- GET / serves index.html
-- Static files served from /static directory
-- Proper MIME types
-- Cache headers configured
-
-**Deliverables:**
-- app/main.py (static file configuration)
-
-## Phase 6: Application Assembly
-
-### Task 6.1: FastAPI Application Setup
-**Estimated Time:** 1 hour  
-**Dependencies:** All previous tasks  
-**Acceptance Criteria:**
-- Initialize FastAPI app in main.py
-- Register all routers
-- Configure middleware (auth, rate limiting, CORS)
-- Setup logging
-- Startup event handlers
-- Shutdown event handlers
-- Exception handlers
-
-**Deliverables:**
-- app/main.py
-
-### Task 6.2: Dockerfile
-**Estimated Time:** 1 hour  
-**Dependencies:** Task 6.1  
-**Acceptance Criteria:**
-- Multi-stage build
-- Python 3.11+ base image
-- Non-root user
-- Health check configured
-- Minimal image size
-- Proper layer caching
-
-**Deliverables:**
-- Dockerfile
-
-## Phase 7: Testing & Documentation
-
-### Task 7.1: Local Testing
-**Estimated Time:** 2 hours  
-**Dependencies:** Task 6.2  
-**Acceptance Criteria:**
-- Test all endpoints with curl/Postman
-- Verify authentication works
-- Verify rate limiting works
-- Test error cases
-- Test web UI functionality
-- Verify DynamoDB integration
-- Verify Secrets Manager integration
-
-**Deliverables:**
-- Test results documentation
-
-### Task 7.2: Documentation
-**Estimated Time:** 1 hour  
-**Dependencies:** Task 7.1  
-**Acceptance Criteria:**
-- Complete README with setup instructions
-- API documentation
-- Environment variable documentation
-- AWS setup instructions (DynamoDB table, Secrets Manager)
-- Docker build and run instructions
-- Example API calls
-
-**Deliverables:**
-- Updated README.md
-- API_DOCUMENTATION.md
-
-## Time Estimate Summary
-
-| Phase | Tasks | Estimated Time |
-|-------|-------|----------------|
-| Phase 1: Project Setup | 3 tasks | 2 hours |
-| Phase 2: AWS Integration | 2 tasks | 3 hours |
-| Phase 3: Auth & Rate Limiting | 2 tasks | 2.5 hours |
-| Phase 4: API Endpoints | 6 tasks | 5.75 hours |
-| Phase 5: Web Interface | 2 tasks | 2 hours |
-| Phase 6: Application Assembly | 2 tasks | 2 hours |
-| Phase 7: Testing & Documentation | 2 tasks | 3 hours |
-| **Total** | **19 tasks** | **~20.25 hours** |
-
-**Note:** Estimate includes buffer time. Actual implementation may be faster with focused development. Target is 15 hours, so some optimization and parallel work will be needed.
-
-## Critical Path
-1. Project Setup (Phase 1)
-2. AWS Services (Phase 2)
-3. Authentication (Phase 3.1)
-4. Core API Endpoints (Phase 4.2, 4.3)
-5. Web Interface (Phase 5)
-6. Assembly & Testing (Phase 6, 7)
-
-## Risk Mitigation
-- **AWS Permissions:** Ensure IAM role is configured before starting Phase 2
-- **DynamoDB Table:** Create table with GSI before testing Phase 2.2
-- **Secrets Manager:** Create secret with API keys before testing Phase 3.1
-- **Time Overrun:** Phases 5 and 7 can be simplified if time is tight
+- [ ]* 7.2 Manual testing and validation
+  - Test all endpoints with curl/Postman
+  - Verify authentication and rate limiting
+  - Test error cases (invalid input, missing auth, rate limit exceeded)
+  - Verify DynamoDB and Secrets Manager integration
+  - Test web UI functionality
+  - _Requirements: All functional requirements_
