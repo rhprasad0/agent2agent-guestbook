@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Terraform
+terraform/
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Documentation
+README.md
+*.md
+!requirements.txt
+
+# Kiro
+.kiro/
+
+# Tests
+tests/
+*.test.py
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
