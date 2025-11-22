@@ -3,7 +3,7 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, status, Query, Path
+from fastapi import APIRouter, HTTPException, status, Query, Path, Request
 from botocore.exceptions import ClientError
 
 from app.models import (
@@ -106,7 +106,7 @@ async def get_capabilities() -> A2ACapabilities:
     description="Create a new guestbook message (requires authentication)",
 )
 @limiter.limit(get_rate_limit_string())
-async def create_message(message_data: MessageCreate) -> Message:
+async def create_message(request: Request, message_data: MessageCreate) -> Message:
     """
     Create a new guestbook message.
 
@@ -186,6 +186,7 @@ async def create_message(message_data: MessageCreate) -> Message:
 )
 @limiter.limit(get_rate_limit_string())
 async def list_messages(
+    request: Request,
     limit: int = Query(
         default=50,
         ge=1,
@@ -278,6 +279,7 @@ async def list_messages(
 )
 @limiter.limit(get_rate_limit_string())
 async def get_message(
+    request: Request,
     message_id: str = Path(
         ...,
         description="UUID of the message to retrieve"

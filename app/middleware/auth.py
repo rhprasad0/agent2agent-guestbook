@@ -5,6 +5,7 @@ import logging
 from typing import Set
 
 from fastapi import Request, HTTPException, status
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -30,10 +31,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             call_next: Next middleware/handler in chain
 
         Returns:
-            Response from next handler
-
-        Raises:
-            HTTPException: 401 if authentication fails on protected endpoint
+            Response from next handler or error response
         """
         # Skip authentication for public endpoints
         if self._is_public_endpoint(request.url.path):
@@ -42,9 +40,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Extract and validate Bearer token
         auth_header = request.headers.get("Authorization")
         if not auth_header:
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={
+                content={
                     "error": {
                         "code": "MISSING_AUTHORIZATION",
                         "message": "Authorization header is required",
@@ -56,9 +54,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Parse Bearer token
         token = self._extract_bearer_token(auth_header)
         if not token:
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={
+                content={
                     "error": {
                         "code": "INVALID_AUTHORIZATION_FORMAT",
                         "message": "Authorization header must be in format: Bearer <token>",
@@ -69,9 +67,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Validate token against cached keys
         if not self._is_valid_api_key(token):
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={
+                content={
                     "error": {
                         "code": "INVALID_API_KEY",
                         "message": "Invalid or expired API key",

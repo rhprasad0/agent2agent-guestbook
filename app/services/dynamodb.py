@@ -81,6 +81,9 @@ class DynamoDBService:
         """
         Get a specific message by ID.
 
+        Since the table has a composite key (message_id + timestamp),
+        we use Query to find the message by partition key only.
+
         Args:
             message_id: UUID of the message
 
@@ -92,12 +95,20 @@ class DynamoDBService:
         """
         try:
             logger.info(f"Fetching message with ID: {message_id}")
-            response = self.table.get_item(Key={"message_id": message_id})
+            
+            # Query by partition key (message_id)
+            response = self.table.query(
+                KeyConditionExpression="message_id = :message_id",
+                ExpressionAttributeValues={":message_id": message_id},
+                Limit=1
+            )
 
-            item = response.get("Item")
-            if not item:
+            items = response.get("Items", [])
+            if not items:
                 logger.info(f"Message not found: {message_id}")
                 return None
+
+            item = items[0]
 
             # Convert DynamoDB item to Message model
             return Message(
