@@ -36,3 +36,8 @@ htmlcov/
 *.swp
 *.swo
 *~
+
+# Security Scanning (Trivy)
+sbom.json
+trivy-results.sarif
+*.sarif

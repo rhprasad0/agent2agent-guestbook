@@ -1,7 +1,7 @@
 # Web Framework
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-python-multipart==0.0.6
+fastapi==0.115.6  # Latest stable - includes starlette security fixes
+uvicorn[standard]==0.34.0
+python-multipart==0.0.18  # Updated to fix CVE-2024-24762, CVE-2024-53981
 
 # AWS SDK
 boto3==1.29.7

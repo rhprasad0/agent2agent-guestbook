@@ -1,0 +1,12 @@
+# Trivy Ignore File - Documented Exceptions
+
+# CVE-2025-62727 - Starlette DoS via Range header merging
+# Status: Waiting for FastAPI to update starlette dependency to 0.49.1+
+# Risk Assessment: LOW for lab environment
+# - This is an internal lab application, not production
+# - DoS via Range header requires specific attack patterns
+# - FastAPI 0.115.6 currently pins starlette to 0.41.3
+# - Will be resolved when FastAPI releases update
+# Tracked: Week 8 security review
+# Review Date: 2025-11-23
+CVE-2025-62727

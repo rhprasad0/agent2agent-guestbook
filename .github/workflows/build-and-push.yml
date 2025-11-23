@@ -38,18 +38,61 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, tag, and push image to Amazon ECR
+      - name: Build Docker image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          echo "IMAGE_FULL_NAME=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_FULL_NAME }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'  # Fail build on HIGH/CRITICAL vulnerabilities
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()  # Upload even if scan fails
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Generate SBOM with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_FULL_NAME }}
+          format: 'cyclonedx'
+          output: 'sbom.json'
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.sha }}
+          path: sbom.json
+          retention-days: 30
+
+      - name: Push image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Only push if Trivy scan passed
           docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          echo "Image pushed: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          echo "✅ Image pushed: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
-      - name: Image scan results
+      - name: Image scan summary
         run: |
-          echo "Image scanning enabled on ECR repository"
-          echo "Check AWS Console for scan results: https://console.aws.amazon.com/ecr/repositories/private/407645373626/$ECR_REPOSITORY"
+          echo "✅ Trivy security scan passed"
+          echo "✅ SBOM generated and uploaded as artifact"
+          echo "✅ ECR native scanning enabled on repository"
+          echo ""
+          echo "View results:"
+          echo "- GitHub Security tab for Trivy findings"
+          echo "- Actions artifacts for SBOM"
+          echo "- ECR Console: https://console.aws.amazon.com/ecr/repositories/private/407645373626/$ECR_REPOSITORY"
