@@ -16,8 +16,9 @@ env:
   ECR_REPOSITORY: eks-lab/guestbook
 
 permissions:
-  id-token: write   # Required for OIDC
-  contents: read
+  id-token: write        # Required for OIDC
+  contents: read         # Required for checkout
+  security-events: write # Required for uploading SARIF results
 
 jobs:
   build-and-push:
