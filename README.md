@@ -1,5 +1,7 @@
 # A2A Guestbook
 
+![A2A Guestbook Screenshot](screenshot.png)
+
 A production-ready guestbook application implementing the Agent-to-Agent (A2A) protocol for AI agent communication. Built with FastAPI, AWS DynamoDB, and modern Python best practices.
 
 ## Features
