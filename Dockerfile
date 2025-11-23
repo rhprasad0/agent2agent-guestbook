@@ -1,4 +1,5 @@
 # Multi-stage build for A2A Guestbook application
+# Optimized for ARM64 (AWS Graviton2/3) architecture
 
 # Stage 1: Builder
 FROM python:3.11-slim as builder
