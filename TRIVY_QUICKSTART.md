@@ -33,8 +33,8 @@ trivy image 407645373626.dkr.ecr.us-east-1.amazonaws.com/eks-lab/guestbook:lates
 
 ## CI/CD Behavior
 
-✅ **Scan passes** → Image pushed to ECR  
-❌ **HIGH/CRITICAL found** → Build fails, no push
+✅ **Scan passes** → Image pushed to ECR with `scan-passed-<sha>` attestation tag  
+❌ **HIGH/CRITICAL found** → Build fails, no push, PR validation blocks merge
 
 ## View Results
 

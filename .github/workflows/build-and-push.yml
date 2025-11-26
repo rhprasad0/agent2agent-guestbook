@@ -57,13 +57,15 @@ jobs:
           echo "IMAGE_FULL_NAME=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
 
       - name: Run Trivy vulnerability scanner
+        id: trivy-scan
         uses: aquasecurity/trivy-action@master
+        continue-on-error: true  # Continue to upload results even if vulnerabilities found
         with:
           image-ref: ${{ env.IMAGE_FULL_NAME }}
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
-          exit-code: '0'  # Don't fail on vulnerabilities in .trivyignore
+          exit-code: '1'  # Exit with 1 if HIGH/CRITICAL found
           trivyignores: '.trivyignore'  # Use documented exceptions
 
       - name: Upload Trivy results to GitHub Security
@@ -73,6 +75,7 @@ jobs:
           sarif_file: 'trivy-results.sarif'
 
       - name: Generate SBOM with Trivy
+        if: always()  # Generate SBOM regardless of scan result
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.IMAGE_FULL_NAME }}
@@ -80,27 +83,55 @@ jobs:
           output: 'sbom.json'
 
       - name: Upload SBOM artifact
+        if: always()  # Upload SBOM regardless of scan result
         uses: actions/upload-artifact@v4
         with:
           name: sbom-${{ github.sha }}
           path: sbom.json
           retention-days: 30
 
+      - name: Fail if vulnerabilities found
+        if: steps.trivy-scan.outcome == 'failure'
+        run: |
+          echo "❌ HIGH or CRITICAL vulnerabilities detected!"
+          echo "❌ Image will NOT be pushed to ECR"
+          echo ""
+          echo "View vulnerability details:"
+          echo "- GitHub Security tab for Trivy findings"
+          echo "- Actions artifacts for SBOM"
+          echo ""
+          echo "To fix:"
+          echo "1. Update base image or dependencies"
+          echo "2. Or add exceptions to .trivyignore with justification"
+          exit 1
+
       - name: Push image to Amazon ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          # Only push if Trivy scan passed
+          # Only reached if Trivy scan passed
           docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
           echo "✅ Image pushed: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          
+      - name: Tag image as scanned
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Add a scan-passed tag to indicate this image passed security scanning
+          # This can be used by admission controllers to verify image provenance
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:scan-passed-$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:scan-passed-$IMAGE_TAG
+          echo "✅ Scan attestation tag pushed: scan-passed-$IMAGE_TAG"
 
       - name: Image scan summary
         run: |
           echo "✅ Trivy security scan passed"
           echo "✅ SBOM generated and uploaded as artifact"
+          echo "✅ Scan attestation tag created"
           echo "✅ ECR native scanning enabled on repository"
           echo ""
           echo "View results:"

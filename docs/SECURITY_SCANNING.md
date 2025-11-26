@@ -137,8 +137,83 @@ Trivy results are uploaded to GitHub's Security tab:
 - [x] Immutable tags (git SHA) used instead of `latest`
 - [x] GitHub OIDC for AWS authentication (no long-lived keys)
 
+## Scanned Images Only - Enforcement (Week 9)
+
+The following controls ensure only security-scanned images can be deployed:
+
+### Defense in Depth Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Security Enforcement Layers                  │
+├─────────────────────────────────────────────────────────────────┤
+│ Layer 1: CI/CD Pipeline                                          │
+│   • Trivy scan with exit-code: 1 (fails on HIGH/CRITICAL)        │
+│   • Scan attestation tag added (scan-passed-<sha>)               │
+│   • Image only pushed after scan passes                          │
+├─────────────────────────────────────────────────────────────────┤
+│ Layer 2: PR Validation (manifest repo)                           │
+│   • validate-image-refs.yml workflow                             │
+│   • Checks ECR for scan-passed attestation tag                   │
+│   • Blocks PR merge if image not scanned                         │
+├─────────────────────────────────────────────────────────────────┤
+│ Layer 3: Kubernetes Admission (Kyverno)                          │
+│   • require-ecr-images.yaml - Only ECR registry                  │
+│   • require-immutable-tags.yaml - No 'latest' tag                │
+│   • verify-scan-attestation.yaml - Check attestation (advanced)  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Infrastructure Setup (aws-devops-lab repo)
+
+The following components are configured in the **infrastructure repo** (`aws-devops-lab`):
+
+1. **Kyverno Installation** - Kubernetes admission controller
+2. **Kyverno Policies** - Enforce ECR-only images and block mutable tags
+3. **PR Validation Workflow** - Verify image attestations before merge
+
+See the infrastructure repo for setup instructions.
+
+### Scan Attestation
+
+When an image passes Trivy scanning, the CI/CD pipeline:
+
+1. Pushes the image with git SHA tag: `guestbook:abc123def`
+2. Creates attestation tag: `guestbook:scan-passed-abc123def`
+
+The PR validation workflow checks for this attestation tag before allowing merge.
+
+## AWS Documentation References
+
+This implementation follows AWS best practices documented in:
+
+- **[EKS Best Practices - Image Security](https://docs.aws.amazon.com/eks/latest/best-practices/image-security.html)**
+  - Scan images for vulnerabilities regularly ✅
+  - Use attestations to validate artifact integrity ✅
+  - Create SBOMs for container images ✅
+  - Use immutable tags ✅
+  - Image signing and admission controllers ✅
+
+- **[Validate Container Image Signatures](https://docs.aws.amazon.com/eks/latest/userguide/image-verification.html)**
+  - Kyverno with AWS Signer plugin for signature validation
+
+- **[Well-Architected DevOps Guidance - DL.CS.3](https://docs.aws.amazon.com/wellarchitected/latest/devops-guidance/dl.cs.3-enforce-verification-before-using-signed-artifacts.html)**
+  - Enforce verification before using signed artifacts
+  - Integrate signature verification into deployment pipeline
+  - Use Kubernetes admission controller
+
+- **[Container Build Lens - Securing Pipelines](https://docs.aws.amazon.com/wellarchitected/latest/container-build-lens/securing-containerized-build-pipelines.html)**
+  - Enable tag immutability
+  - Scan container images for vulnerabilities
+  - Run acceptance tests
+
+- **[Kyverno on Amazon EKS](https://aws.amazon.com/blogs/containers/easy-as-one-two-three-policy-management-with-kyverno-on-amazon-eks/)**
+  - Policy-as-code for Kubernetes
+  - Validate and mutate configurations
+
 ## Next Steps (Week 14)
 
-- Add Kyverno/OPA policies to enforce scanned images only
-- Integrate with External Secrets Operator
-- Implement automated vulnerability remediation PRs
+- [ ] Integrate with External Secrets Operator
+- [ ] Implement automated vulnerability remediation PRs
+- [ ] Add AWS Signer image signing for cryptographic attestations (see [IMAGE_SIGNING_ENHANCEMENT.md](IMAGE_SIGNING_ENHANCEMENT.md))
+- [ ] Implement runtime image verification with Notation

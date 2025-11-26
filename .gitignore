@@ -41,3 +41,4 @@ htmlcov/
 sbom.json
 trivy-results.sarif
 *.sarif
+.cursor/mcp.json

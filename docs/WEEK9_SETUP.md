@@ -115,7 +115,10 @@ Should show: `targetRevision: week9`
 ### Security Features
 
 - ✅ OIDC authentication (no long-lived AWS keys)
-- ✅ Image scanning with Trivy
+- ✅ Image scanning with Trivy (build fails on HIGH/CRITICAL)
+- ✅ Scan attestation tags for image provenance
+- ✅ PR validation workflow blocks unscanned images
+- ✅ Kyverno policies for runtime enforcement
 - ✅ SBOM generation
 - ✅ Signed commits from GitHub Actions bot
 - ✅ PAT with minimal scope (repo only)
