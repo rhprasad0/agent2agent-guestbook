@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.config import config
 from app.middleware import (
@@ -137,6 +138,9 @@ app.add_middleware(AuthMiddleware)
 # Register routers
 app.include_router(a2a_router)
 app.include_router(public_router)
+
+# Instrument app with Prometheus
+Instrumentator().instrument(app).expose(app)
 
 # Mount static files for web UI (must be last to avoid route conflicts)
 app.mount("/", StaticFiles(directory="app/static", html=True), name="static")

@@ -14,5 +14,8 @@ pydantic-settings==2.1.0
 # Rate Limiting
 slowapi==0.1.9
 
+# Monitoring
+prometheus-fastapi-instrumentator==7.0.0
+
 # Utilities
 python-dotenv==1.0.0
