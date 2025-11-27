@@ -41,19 +41,14 @@ FastAPI Application
 
 ### 1. Setup AWS Infrastructure
 
-Deploy DynamoDB table and Secrets Manager secret using Terraform:
+This application depends on infrastructure provisioned in the **Main DevOps Lab Repository** (`aws-devops-lab`).
 
-```bash
-cd terraform
-cp terraform.tfvars.example terraform.tfvars
-
-# Generate secure API keys
-openssl rand -hex 32  # Run for each key needed
-
-# Edit terraform.tfvars with your keys
-terraform init
-terraform apply
-```
+**Prerequisites:**
+1.  Deploy the platform infrastructure from the main repo.
+2.  Note the following outputs from that deployment:
+    - `aws_region`
+    - `dynamodb_table_name`
+    - `secret_name` (for API keys)
 
 ### 2. Configure Environment
 
@@ -62,10 +57,10 @@ terraform apply
 cp .env.example .env
 
 # Edit .env with your AWS configuration
-# Use terraform outputs for values:
-export AWS_REGION=$(cd terraform && terraform output -raw aws_region)
-export DYNAMODB_TABLE_NAME=$(cd terraform && terraform output -raw dynamodb_table_name)
-export API_KEYS_SECRET_NAME=$(cd terraform && terraform output -raw secret_name)
+# Replace placeholders with actual values from the main repo infrastructure
+export AWS_REGION=us-east-1
+export DYNAMODB_TABLE_NAME=...
+export API_KEYS_SECRET_NAME=...
 ```
 
 ### 3. Install Dependencies
@@ -293,7 +288,7 @@ The application needs these IAM permissions:
 │   └── static/
 │       ├── index.html       # Web UI
 │       └── style.css        # Styling
-├── terraform/               # Infrastructure as code
+├── terraform/               # (Removed - Infra managed in Main Repo)
 ├── requirements.txt         # Python dependencies
 ├── Dockerfile              # Container image
 └── README.md               # This file

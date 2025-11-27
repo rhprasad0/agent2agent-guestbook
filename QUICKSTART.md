@@ -8,26 +8,9 @@ Get up and running in 5 minutes.
 - Python 3.11+ or Docker
 - Terraform (for infrastructure)
 
-## Step 1: Deploy Infrastructure (2 minutes)
+## Step 1: Verify Infrastructure
 
-```bash
-cd terraform
-
-# Copy and edit configuration
-cp terraform.tfvars.example terraform.tfvars
-
-# Generate a secure API key
-openssl rand -hex 32
-
-# Edit terraform.tfvars and add your generated key to api_keys list
-
-# Deploy
-terraform init
-terraform apply -auto-approve
-
-# Save outputs
-terraform output
-```
+Ensure the platform infrastructure is deployed from the **Main DevOps Lab Repository**. You will need the DynamoDB table name and Secrets Manager secret name from that deployment.
 
 ## Step 2: Configure Application (1 minute)
 
@@ -37,11 +20,12 @@ cd ..
 # Copy environment template
 cp .env.example .env
 
-# Auto-populate from Terraform outputs
+# Edit .env with your values
+# You must manually fill in these values from your infrastructure deployment
 cat > .env << EOF
-AWS_REGION=$(cd terraform && terraform output -raw aws_region)
-DYNAMODB_TABLE_NAME=$(cd terraform && terraform output -raw dynamodb_table_name)
-API_KEYS_SECRET_NAME=$(cd terraform && terraform output -raw secret_name)
+AWS_REGION=us-east-1
+DYNAMODB_TABLE_NAME=your-table-name
+API_KEYS_SECRET_NAME=your-secret-name
 RATE_LIMIT_PER_MINUTE=10
 LOG_LEVEL=INFO
 PORT=8000
@@ -82,8 +66,8 @@ python app/main.py
 ## Step 4: Test It (1 minute)
 
 ```bash
-# Get your API key from Terraform
-API_KEY=$(cd terraform && terraform output -raw api_keys | jq -r '.[0]')
+# Get your API key (retrieve this from AWS Secrets Manager if you don't have it)
+API_KEY="your-api-key"
 
 # Test health
 curl http://localhost:8000/health
@@ -130,12 +114,10 @@ docker logs a2a-guestbook
 
 ### Update API Keys
 ```bash
-# Edit Terraform configuration
-cd terraform
-vim terraform.tfvars
-
-# Apply changes
-terraform apply
+# Update the secret in AWS Secrets Manager directly (e.g., via Console or CLI)
+aws secretsmanager put-secret-value \
+    --secret-id a2a-guestbook/api-keys \
+    --secret-string '{"api_keys": ["new-key-1", "new-key-2"]}'
 
 # Wait 5 minutes for automatic refresh
 # Or restart application for immediate effect
@@ -158,8 +140,7 @@ docker stop a2a-guestbook 2>/dev/null || true
 docker rm a2a-guestbook 2>/dev/null || true
 
 # Destroy infrastructure
-cd terraform
-terraform destroy -auto-approve
+# (Perform this action in the Main DevOps Lab Repository)
 ```
 
 ## Troubleshooting
@@ -180,8 +161,8 @@ aws sts get-caller-identity
 aws dynamodb describe-table \
   --table-name a2a-guestbook-messages
 
-# Verify table name in .env matches Terraform output
-cd terraform && terraform output dynamodb_table_name
+# Verify table name in .env matches your actual DynamoDB table
+grep DYNAMODB_TABLE_NAME .env
 ```
 
 ### Port already in use

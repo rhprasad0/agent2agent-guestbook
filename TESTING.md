@@ -541,7 +541,7 @@ ab -n 100 -c 10 -H "Authorization: Bearer $API_KEY" \
 ## Continuous Testing
 
 For automated testing in CI/CD:
-1. Deploy infrastructure with Terraform
+1. Ensure infrastructure is available (from Main Repo)
 2. Start application container
 3. Run test suite with exit codes
 4. Collect and report results
