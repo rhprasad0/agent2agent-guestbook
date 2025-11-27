@@ -1,0 +1,25 @@
+{
+    "name": "Secure A2A Guestbook Dev",
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    "runArgs": [
+        "--security-opt", "seccomp=.devcontainer/seccomp-profile.json",
+        "--cap-drop=ALL",
+        "--cap-add=NET_BIND_SERVICE"
+    ],
+    "forwardPorts": [8000],
+    "remoteUser": "vscode",
+    "features": {
+        "ghcr.io/devcontainers/features/aws-cli:1": {}
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance"
+            ]
+        }
+    }
+}
+
