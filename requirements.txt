@@ -19,3 +19,12 @@ prometheus-fastapi-instrumentator==7.0.0
 
 # Utilities
 python-dotenv==1.0.0
+
+# Tracing - OpenTelemetry with AWS X-Ray
+opentelemetry-api==1.28.0
+opentelemetry-sdk==1.28.0
+opentelemetry-exporter-otlp-proto-grpc==1.28.0
+opentelemetry-instrumentation-fastapi==0.49b0
+opentelemetry-instrumentation-boto3sqs==0.49b0
+opentelemetry-instrumentation-botocore==0.49b0
+opentelemetry-sdk-extension-aws==2.0.2

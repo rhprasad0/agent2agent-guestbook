@@ -6,3 +6,6 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin \
     && apt-get install -y make \
     && apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/*
+
+# Install uv (includes uvx) - fast Python package installer
+RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_UNMANAGED_INSTALL="/usr/local/bin" sh

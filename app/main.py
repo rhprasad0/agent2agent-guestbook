@@ -1,7 +1,11 @@
 """FastAPI application entry point for A2A Guestbook."""
 
+# Initialize tracing FIRST - before any other imports that might use boto3
+# This ensures all AWS SDK calls are automatically instrumented
+from app.tracing import setup_tracing, instrument_fastapi, get_current_trace_id
+setup_tracing()
+
 import logging
-import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
@@ -11,8 +15,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from prometheus_fastapi_instrumentator import Instrumentator
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import config
+from app.logging_config import setup_logging
 from app.middleware import (
     AuthMiddleware,
     load_api_keys,
@@ -22,14 +28,29 @@ from app.middleware import (
 )
 from app.routers import a2a_router, public_router
 
-# Configure structured logging
-logging.basicConfig(
-    level=getattr(logging, config.log_level.upper()),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
+# Configure structured JSON logging with trace correlation
+setup_logging(level=config.log_level)
 
 logger = logging.getLogger(__name__)
+
+
+class TraceIdMiddleware(BaseHTTPMiddleware):
+    """
+    Middleware to add X-Amzn-Trace-Id header to responses.
+
+    This allows clients to correlate their requests with X-Ray traces
+    for debugging and monitoring purposes.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+
+        # Add trace ID to response headers if available
+        trace_id = get_current_trace_id()
+        if trace_id:
+            response.headers["X-Amzn-Trace-Id"] = f"Root={trace_id}"
+
+        return response
 
 
 @asynccontextmanager
@@ -44,9 +65,14 @@ async def lifespan(app: FastAPI):
     """
     # Startup
     logger.info("Starting A2A Guestbook application")
-    logger.info(f"Configuration: region={config.aws_region}, "
-                f"table={config.dynamodb_table_name}, "
-                f"rate_limit={config.rate_limit_per_minute}/min")
+    logger.info(
+        "Configuration loaded",
+        extra={
+            "region": config.aws_region,
+            "table": config.dynamodb_table_name,
+            "rate_limit": config.rate_limit_per_minute,
+        }
+    )
 
     try:
         # Load API keys from Secrets Manager
@@ -81,6 +107,9 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+# Instrument FastAPI with OpenTelemetry for automatic HTTP tracing
+instrument_fastapi(app)
+
 # Add rate limiter state to app
 app.state.limiter = limiter
 
@@ -99,17 +128,25 @@ async def global_exception_handler(request: Request, exc: Exception):
         exc: The exception that was raised
 
     Returns:
-        JSONResponse with error details
+        JSONResponse with error details including trace ID for debugging
     """
+    trace_id = get_current_trace_id()
+
     logger.error(
         f"Unhandled exception: {exc}",
         extra={
             "path": request.url.path,
             "method": request.method,
             "error_type": type(exc).__name__,
+            "trace_id": trace_id,
         },
         exc_info=True
     )
+
+    # Include trace ID in error response for debugging
+    error_details = {}
+    if trace_id:
+        error_details["trace_id"] = trace_id
 
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -117,7 +154,7 @@ async def global_exception_handler(request: Request, exc: Exception):
             "error": {
                 "code": "INTERNAL_ERROR",
                 "message": "An unexpected error occurred",
-                "details": {},
+                "details": error_details,
             }
         },
     )
@@ -131,6 +168,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add trace ID response header middleware
+app.add_middleware(TraceIdMiddleware)
 
 # Add authentication middleware
 app.add_middleware(AuthMiddleware)
