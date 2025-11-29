@@ -1,17 +1,17 @@
 """AWS DynamoDB service for message storage."""
 
-import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
 import boto3
+import structlog
 from botocore.exceptions import ClientError
 
 from app.config import config
 from app.models import Message, MessageCreate
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class DynamoDBService:
@@ -55,7 +55,7 @@ class DynamoDBService:
                 item["metadata"] = message_data.metadata
 
             # Store in DynamoDB
-            logger.info(f"Creating message with ID: {message_id}")
+            logger.info("dynamodb_put_item", message_id=message_id)
             self.table.put_item(Item=item)
 
             # Return created message
@@ -70,11 +70,16 @@ class DynamoDBService:
         except ClientError as e:
             error_code = e.response["Error"]["Code"]
             error_message = e.response["Error"]["Message"]
-            logger.error(f"DynamoDB error creating message ({error_code}): {error_message}")
+            logger.error(
+                "dynamodb_error",
+                operation="put_item",
+                error_code=error_code,
+                error_message=error_message,
+            )
             raise
 
         except Exception as e:
-            logger.error(f"Unexpected error creating message: {e}")
+            logger.error("unexpected_error", operation="create_message", error=str(e))
             raise
 
     async def get_message_by_id(self, message_id: str) -> Optional[Message]:
@@ -94,8 +99,8 @@ class DynamoDBService:
             ClientError: If DynamoDB operation fails
         """
         try:
-            logger.info(f"Fetching message with ID: {message_id}")
-            
+            logger.info("dynamodb_query", message_id=message_id)
+
             # Query by partition key (message_id)
             response = self.table.query(
                 KeyConditionExpression="message_id = :message_id",
@@ -105,7 +110,7 @@ class DynamoDBService:
 
             items = response.get("Items", [])
             if not items:
-                logger.info(f"Message not found: {message_id}")
+                logger.info("dynamodb_item_not_found", message_id=message_id)
                 return None
 
             item = items[0]
@@ -122,11 +127,16 @@ class DynamoDBService:
         except ClientError as e:
             error_code = e.response["Error"]["Code"]
             error_message = e.response["Error"]["Message"]
-            logger.error(f"DynamoDB error fetching message ({error_code}): {error_message}")
+            logger.error(
+                "dynamodb_error",
+                operation="query",
+                error_code=error_code,
+                error_message=error_message,
+            )
             raise
 
         except Exception as e:
-            logger.error(f"Unexpected error fetching message: {e}")
+            logger.error("unexpected_error", operation="get_message", error=str(e))
             raise
 
     async def list_messages(
@@ -170,9 +180,9 @@ class DynamoDBService:
                         "timestamp": start_key,
                     }
                 except Exception as e:
-                    logger.warning(f"Invalid pagination token: {e}")
+                    logger.warning("invalid_pagination_token", error=str(e))
 
-            logger.info(f"Querying messages with limit: {limit}")
+            logger.info("dynamodb_query_index", limit=limit)
             response = self.table.query(**query_params)
 
             # Convert items to Message models
@@ -193,17 +203,22 @@ class DynamoDBService:
             if last_evaluated_key:
                 next_key = last_evaluated_key.get("timestamp")
 
-            logger.info(f"Retrieved {len(messages)} message(s)")
+            logger.info("dynamodb_query_complete", count=len(messages))
             return messages, next_key
 
         except ClientError as e:
             error_code = e.response["Error"]["Code"]
             error_message = e.response["Error"]["Message"]
-            logger.error(f"DynamoDB error listing messages ({error_code}): {error_message}")
+            logger.error(
+                "dynamodb_error",
+                operation="query_index",
+                error_code=error_code,
+                error_message=error_message,
+            )
             raise
 
         except Exception as e:
-            logger.error(f"Unexpected error listing messages: {e}")
+            logger.error("unexpected_error", operation="list_messages", error=str(e))
             raise
 
 

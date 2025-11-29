@@ -5,9 +5,9 @@
 from app.tracing import setup_tracing, instrument_fastapi, get_current_trace_id
 setup_tracing()
 
-import logging
 from contextlib import asynccontextmanager
 
+import structlog
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,9 +18,10 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import config
-from app.logging_config import setup_logging
+from app.logging_config import configure_logging
 from app.middleware import (
     AuthMiddleware,
+    RequestLoggingMiddleware,
     load_api_keys,
     start_key_refresh_task,
     stop_key_refresh_task,
@@ -29,9 +30,9 @@ from app.middleware import (
 from app.routers import a2a_router, public_router
 
 # Configure structured JSON logging with trace correlation
-setup_logging(level=config.log_level)
+configure_logging(level=config.log_level)
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class TraceIdMiddleware(BaseHTTPMiddleware):
@@ -64,37 +65,35 @@ async def lifespan(app: FastAPI):
     - Cleanup on shutdown
     """
     # Startup
-    logger.info("Starting A2A Guestbook application")
+    logger.info("application_starting")
     logger.info(
-        "Configuration loaded",
-        extra={
-            "region": config.aws_region,
-            "table": config.dynamodb_table_name,
-            "rate_limit": config.rate_limit_per_minute,
-        }
+        "configuration_loaded",
+        region=config.aws_region,
+        table=config.dynamodb_table_name,
+        rate_limit=config.rate_limit_per_minute,
     )
 
     try:
         # Load API keys from Secrets Manager
         await load_api_keys()
-        logger.info("API keys loaded successfully")
+        logger.info("api_keys_loaded")
 
         # Start background task for periodic key refresh
         start_key_refresh_task()
-        logger.info("Background key refresh task started")
+        logger.info("key_refresh_task_started")
 
     except Exception as e:
-        logger.error(f"Failed to initialize application: {e}")
+        logger.error("initialization_failed", error=str(e))
         raise
 
-    logger.info("Application startup complete")
+    logger.info("application_startup_complete")
 
     yield
 
     # Shutdown
-    logger.info("Shutting down A2A Guestbook application")
+    logger.info("application_shutting_down")
     stop_key_refresh_task()
-    logger.info("Application shutdown complete")
+    logger.info("application_shutdown_complete")
 
 
 # Initialize FastAPI application
@@ -133,14 +132,11 @@ async def global_exception_handler(request: Request, exc: Exception):
     trace_id = get_current_trace_id()
 
     logger.error(
-        f"Unhandled exception: {exc}",
-        extra={
-            "path": request.url.path,
-            "method": request.method,
-            "error_type": type(exc).__name__,
-            "trace_id": trace_id,
-        },
-        exc_info=True
+        "unhandled_exception",
+        path=request.url.path,
+        method=request.method,
+        error_type=type(exc).__name__,
+        error_message=str(exc),
     )
 
     # Include trace ID in error response for debugging
@@ -175,6 +171,9 @@ app.add_middleware(TraceIdMiddleware)
 # Add authentication middleware
 app.add_middleware(AuthMiddleware)
 
+# Add request logging middleware (logs all requests with security context)
+app.add_middleware(RequestLoggingMiddleware)
+
 # Register routers
 app.include_router(a2a_router)
 app.include_router(public_router)
@@ -190,7 +189,7 @@ app.mount("/", StaticFiles(directory="app/static", html=True), name="static")
 if __name__ == "__main__":
     import uvicorn
 
-    logger.info(f"Starting server on port {config.port}")
+    logger.info("server_starting", port=config.port)
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",

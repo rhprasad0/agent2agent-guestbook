@@ -20,6 +20,10 @@ prometheus-fastapi-instrumentator==7.0.0
 # Utilities
 python-dotenv==1.0.0
 
+# Structured Logging
+structlog>=24.0.0
+python-json-logger>=2.0.0
+
 # Tracing - OpenTelemetry with AWS X-Ray
 opentelemetry-api==1.28.0
 opentelemetry-sdk==1.28.0

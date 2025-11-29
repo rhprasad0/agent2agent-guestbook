@@ -1,9 +1,9 @@
 """Authentication middleware for A2A Guestbook application."""
 
 import asyncio
-import logging
 from typing import Set
 
+import structlog
 from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -11,8 +11,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import config
 from app.services.secrets import fetch_api_keys
+from app.middleware.request_logging import hash_api_key, get_client_ip
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 # In-memory cache of valid API keys
 _api_keys_cache: Set[str] = set()
@@ -37,9 +38,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if self._is_public_endpoint(request.url.path):
             return await call_next(request)
 
+        client_ip = get_client_ip(request)
+
         # Extract and validate Bearer token
         auth_header = request.headers.get("Authorization")
         if not auth_header:
+            logger.warning(
+                "auth_failed",
+                user="anonymous",
+                reason="missing_authorization_header",
+                client_ip=client_ip,
+                path=request.url.path,
+            )
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 content={
@@ -54,6 +64,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Parse Bearer token
         token = self._extract_bearer_token(auth_header)
         if not token:
+            logger.warning(
+                "auth_failed",
+                user="anonymous",
+                reason="invalid_authorization_format",
+                client_ip=client_ip,
+                path=request.url.path,
+            )
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 content={
@@ -67,6 +84,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Validate token against cached keys
         if not self._is_valid_api_key(token):
+            logger.warning(
+                "auth_failed",
+                user=hash_api_key(token),
+                reason="invalid_api_key",
+                client_ip=client_ip,
+                path=request.url.path,
+            )
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 content={
@@ -150,12 +174,12 @@ async def load_api_keys() -> None:
     global _api_keys_cache
 
     try:
-        logger.info("Loading API keys from Secrets Manager")
+        logger.info("loading_api_keys")
         keys = await fetch_api_keys()
         _api_keys_cache = set(keys)
-        logger.info(f"Successfully loaded {len(_api_keys_cache)} API key(s)")
+        logger.info("api_keys_loaded", count=len(_api_keys_cache))
     except Exception as e:
-        logger.error(f"Failed to load API keys: {e}")
+        logger.error("api_keys_load_failed", error=str(e))
         raise
 
 
@@ -169,8 +193,8 @@ async def refresh_api_keys_periodically() -> None:
     global _api_keys_cache
 
     logger.info(
-        f"Starting API key refresh task "
-        f"(interval: {config.key_refresh_interval_seconds}s)"
+        "key_refresh_task_starting",
+        interval_seconds=config.key_refresh_interval_seconds,
     )
 
     while True:
@@ -179,16 +203,16 @@ async def refresh_api_keys_periodically() -> None:
             await asyncio.sleep(config.key_refresh_interval_seconds)
 
             # Fetch fresh keys
-            logger.debug("Refreshing API keys from Secrets Manager")
+            logger.debug("refreshing_api_keys")
             keys = await fetch_api_keys()
 
             # Update cache atomically
             _api_keys_cache = set(keys)
-            logger.info(f"API keys refreshed successfully ({len(_api_keys_cache)} key(s))")
+            logger.info("api_keys_refreshed", count=len(_api_keys_cache))
 
         except Exception as e:
             # Log error but continue running
-            logger.error(f"Failed to refresh API keys: {e}. Will retry in next interval.")
+            logger.error("api_keys_refresh_failed", error=str(e))
 
 
 def start_key_refresh_task() -> None:
@@ -201,9 +225,9 @@ def start_key_refresh_task() -> None:
 
     if _refresh_task is None or _refresh_task.done():
         _refresh_task = asyncio.create_task(refresh_api_keys_periodically())
-        logger.info("API key refresh task started")
+        logger.info("key_refresh_task_started")
     else:
-        logger.warning("API key refresh task is already running")
+        logger.warning("key_refresh_task_already_running")
 
 
 def stop_key_refresh_task() -> None:
@@ -216,4 +240,4 @@ def stop_key_refresh_task() -> None:
 
     if _refresh_task and not _refresh_task.done():
         _refresh_task.cancel()
-        logger.info("API key refresh task stopped")
+        logger.info("key_refresh_task_stopped")

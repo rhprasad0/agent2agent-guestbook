@@ -1,15 +1,15 @@
 """AWS Secrets Manager service for API key management."""
 
 import json
-import logging
 from typing import List
 
 import boto3
+import structlog
 from botocore.exceptions import ClientError
 
 from app.config import config
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 async def fetch_api_keys() -> List[str]:
@@ -31,7 +31,7 @@ async def fetch_api_keys() -> List[str]:
         )
 
         # Fetch secret value
-        logger.info(f"Fetching API keys from secret: {config.api_keys_secret_name}")
+        logger.info("fetching_secret", secret_name=config.api_keys_secret_name)
         response = client.get_secret_value(SecretId=config.api_keys_secret_name)
 
         # Parse secret string
@@ -55,7 +55,7 @@ async def fetch_api_keys() -> List[str]:
         if not valid_keys:
             raise ValueError("No valid API keys found in secret")
 
-        logger.info(f"Successfully fetched {len(valid_keys)} API key(s)")
+        logger.info("secret_fetched", count=len(valid_keys))
         return valid_keys
 
     except ClientError as e:
@@ -64,23 +64,27 @@ async def fetch_api_keys() -> List[str]:
 
         if error_code == "ResourceNotFoundException":
             logger.error(
-                f"Secret not found: {config.api_keys_secret_name}. "
-                "Please create the secret in AWS Secrets Manager."
+                "secret_not_found",
+                secret_name=config.api_keys_secret_name,
             )
         elif error_code == "AccessDeniedException":
             logger.error(
-                f"Access denied to secret: {config.api_keys_secret_name}. "
-                "Check IAM permissions."
+                "secret_access_denied",
+                secret_name=config.api_keys_secret_name,
             )
         else:
-            logger.error(f"Secrets Manager error ({error_code}): {error_message}")
+            logger.error(
+                "secrets_manager_error",
+                error_code=error_code,
+                error_message=error_message,
+            )
 
         raise
 
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse secret as JSON: {e}")
+        logger.error("secret_json_parse_error", error=str(e))
         raise ValueError(f"Invalid JSON in secret: {e}")
 
     except Exception as e:
-        logger.error(f"Unexpected error fetching API keys: {e}")
+        logger.error("unexpected_error", operation="fetch_api_keys", error=str(e))
         raise

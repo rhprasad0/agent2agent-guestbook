@@ -1,4 +1,4 @@
-"""Middleware components for authentication and rate limiting."""
+"""Middleware components for authentication, rate limiting, and request logging."""
 
 from app.middleware.auth import (
     AuthMiddleware,
@@ -12,6 +12,10 @@ from app.middleware.rate_limit import (
     get_rate_limit_string,
     should_apply_rate_limit,
 )
+from app.middleware.request_logging import (
+    RequestLoggingMiddleware,
+    hash_api_key,
+)
 
 __all__ = [
     "AuthMiddleware",
@@ -22,4 +26,6 @@ __all__ = [
     "limiter",
     "get_rate_limit_string",
     "should_apply_rate_limit",
+    "RequestLoggingMiddleware",
+    "hash_api_key",
 ]

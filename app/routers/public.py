@@ -1,15 +1,15 @@
 """Public endpoints for A2A Guestbook (no authentication required)."""
 
-import logging
 from datetime import datetime, timezone
 
+import structlog
 from fastapi import APIRouter, HTTPException, status
 from botocore.exceptions import ClientError
 
 from app.models import PublicMessageList, HealthResponse
 from app.services.dynamodb import dynamodb_service
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 router = APIRouter()
 
@@ -37,7 +37,7 @@ async def get_public_messages() -> PublicMessageList:
             - 500: Internal Server Error (database error)
     """
     try:
-        logger.info("Fetching public messages")
+        logger.info("fetching_public_messages")
 
         # Get up to 50 most recent messages
         messages, _ = await dynamodb_service.list_messages(limit=50)
@@ -53,15 +53,16 @@ async def get_public_messages() -> PublicMessageList:
             for msg in messages
         ]
 
-        logger.info(f"Retrieved {len(public_messages)} public message(s)")
+        logger.info("public_messages_retrieved", count=len(public_messages))
 
         return PublicMessageList(messages=public_messages)
 
     except ClientError as e:
         error_code = e.response["Error"]["Code"]
         logger.error(
-            f"DynamoDB error fetching public messages: {error_code}",
-            extra={"error_code": error_code}
+            "dynamodb_error",
+            action="list_public_messages",
+            error_code=error_code,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -75,7 +76,7 @@ async def get_public_messages() -> PublicMessageList:
         )
 
     except Exception as e:
-        logger.error(f"Unexpected error fetching public messages: {e}")
+        logger.error("unexpected_error", action="list_public_messages", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={

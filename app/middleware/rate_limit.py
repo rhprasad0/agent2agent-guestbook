@@ -1,15 +1,15 @@
 """Rate limiting configuration for A2A Guestbook application."""
 
-import logging
 from typing import Callable
 
+import structlog
 from fastapi import Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.config import config
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 def get_api_key_identifier(request: Request) -> str:
@@ -33,12 +33,12 @@ def get_api_key_identifier(request: Request) -> str:
         api_key = auth_header[7:]  # Remove "Bearer " prefix
         if api_key:
             # Use first 8 characters of API key for logging (sanitized)
-            logger.debug(f"Rate limiting by API key: {api_key[:8]}...")
+            logger.debug("rate_limit_by_api_key", key_prefix=api_key[:8])
             return f"api_key:{api_key}"
 
     # Fall back to IP address for unauthenticated requests
     ip_address = get_remote_address(request)
-    logger.debug(f"Rate limiting by IP address: {ip_address}")
+    logger.debug("rate_limit_by_ip", ip_address=ip_address)
     return f"ip:{ip_address}"
 
 

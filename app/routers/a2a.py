@@ -1,8 +1,8 @@
 """A2A Protocol endpoints for agent-to-agent communication."""
 
-import logging
 from typing import Optional
 
+import structlog
 from fastapi import APIRouter, HTTPException, status, Query, Path, Request
 from botocore.exceptions import ClientError
 
@@ -15,7 +15,7 @@ from app.models import (
 from app.services.dynamodb import dynamodb_service
 from app.middleware.rate_limit import limiter, get_rate_limit_string
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 router = APIRouter()
 
@@ -128,20 +128,18 @@ async def create_message(request: Request, message_data: MessageCreate) -> Messa
     """
     try:
         logger.info(
-            f"Creating message from agent: {message_data.agent_name}",
-            extra={"agent_name": message_data.agent_name}
+            "creating_message",
+            agent_name=message_data.agent_name,
         )
 
         # Create message in DynamoDB
         message = await dynamodb_service.create_message(message_data)
 
         logger.info(
-            f"Message created successfully: {message.message_id}",
-            extra={
-                "message_id": message.message_id,
-                "agent_name": message.agent_name,
-                "timestamp": message.timestamp,
-            }
+            "message_created",
+            message_id=message.message_id,
+            agent_name=message.agent_name,
+            timestamp=message.timestamp,
         )
 
         return message
@@ -149,8 +147,9 @@ async def create_message(request: Request, message_data: MessageCreate) -> Messa
     except ClientError as e:
         error_code = e.response["Error"]["Code"]
         logger.error(
-            f"DynamoDB error creating message: {error_code}",
-            extra={"error_code": error_code}
+            "dynamodb_error",
+            action="create_message",
+            error_code=error_code,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -164,7 +163,7 @@ async def create_message(request: Request, message_data: MessageCreate) -> Messa
         )
 
     except Exception as e:
-        logger.error(f"Unexpected error creating message: {e}")
+        logger.error("unexpected_error", action="create_message", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={
@@ -219,8 +218,9 @@ async def list_messages(
     """
     try:
         logger.info(
-            f"Listing messages with limit: {limit}",
-            extra={"limit": limit, "has_start_key": start_key is not None}
+            "listing_messages",
+            limit=limit,
+            has_start_key=start_key is not None,
         )
 
         # Query messages from DynamoDB
@@ -230,11 +230,9 @@ async def list_messages(
         )
 
         logger.info(
-            f"Retrieved {len(messages)} message(s)",
-            extra={
-                "count": len(messages),
-                "has_next_page": next_key is not None,
-            }
+            "messages_retrieved",
+            count=len(messages),
+            has_next_page=next_key is not None,
         )
 
         return MessageList(messages=messages, next_key=next_key)
@@ -242,8 +240,9 @@ async def list_messages(
     except ClientError as e:
         error_code = e.response["Error"]["Code"]
         logger.error(
-            f"DynamoDB error listing messages: {error_code}",
-            extra={"error_code": error_code}
+            "dynamodb_error",
+            action="list_messages",
+            error_code=error_code,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -257,7 +256,7 @@ async def list_messages(
         )
 
     except Exception as e:
-        logger.error(f"Unexpected error listing messages: {e}")
+        logger.error("unexpected_error", action="list_messages", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={
@@ -305,19 +304,13 @@ async def get_message(
             - 500: Internal Server Error (database error)
     """
     try:
-        logger.info(
-            f"Fetching message: {message_id}",
-            extra={"message_id": message_id}
-        )
+        logger.info("fetching_message", message_id=message_id)
 
         # Get message from DynamoDB
         message = await dynamodb_service.get_message_by_id(message_id)
 
         if message is None:
-            logger.info(
-                f"Message not found: {message_id}",
-                extra={"message_id": message_id}
-            )
+            logger.info("message_not_found", message_id=message_id)
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={
@@ -329,10 +322,7 @@ async def get_message(
                 },
             )
 
-        logger.info(
-            f"Message retrieved successfully: {message_id}",
-            extra={"message_id": message_id}
-        )
+        logger.info("message_retrieved", message_id=message_id)
 
         return message
 
@@ -343,8 +333,10 @@ async def get_message(
     except ClientError as e:
         error_code = e.response["Error"]["Code"]
         logger.error(
-            f"DynamoDB error fetching message: {error_code}",
-            extra={"error_code": error_code, "message_id": message_id}
+            "dynamodb_error",
+            action="get_message",
+            error_code=error_code,
+            message_id=message_id,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -358,7 +350,7 @@ async def get_message(
         )
 
     except Exception as e:
-        logger.error(f"Unexpected error fetching message: {e}")
+        logger.error("unexpected_error", action="get_message", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={
