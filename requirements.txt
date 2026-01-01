@@ -3,9 +3,9 @@ fastapi==0.115.6  # Latest stable - includes starlette security fixes
 uvicorn[standard]==0.34.0
 python-multipart==0.0.18  # Updated to fix CVE-2024-24762, CVE-2024-53981
 
-# AWS SDK
-boto3==1.29.7
-botocore==1.32.7
+# AWS SDK (updated to support urllib3 2.x on Python 3.10+)
+boto3==1.42.19
+botocore==1.42.19
 
 # Security: Pin urllib3 to fix CVE-2025-66471 (decompression bomb DoS) and CVE-2025-66418 (decompression chain DoS)
 urllib3>=2.6.0
