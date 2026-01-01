@@ -11,13 +11,14 @@ class Config(BaseSettings):
     # AWS Configuration (Required)
     aws_region: str
     dynamodb_table_name: str
-    api_keys_secret_name: str
+
+    # API Keys (injected from K8s Secret via ESO)
+    api_keys: str  # JSON array of API keys, e.g., '["key1","key2"]'
 
     # Application Configuration (Optional with defaults)
     rate_limit_per_minute: int = 10
     log_level: str = "INFO"
     port: int = 8000
-    key_refresh_interval_seconds: int = 300
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -48,12 +49,6 @@ class Config(BaseSettings):
                 f"PORT must be between 1 and 65535, got: {self.port}"
             )
 
-        # Validate key refresh interval
-        if self.key_refresh_interval_seconds <= 0:
-            raise ValueError(
-                f"KEY_REFRESH_INTERVAL_SECONDS must be positive, "
-                f"got: {self.key_refresh_interval_seconds}"
-            )
 
 
 # Global configuration instance

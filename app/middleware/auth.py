@@ -1,23 +1,19 @@
 """Authentication middleware for A2A Guestbook application."""
 
-import asyncio
 from typing import Set
 
 import structlog
-from fastapi import Request, HTTPException, status
+from fastapi import Request, status
 from fastapi.responses import JSONResponse
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.config import config
-from app.services.secrets import fetch_api_keys
+from app.services.secrets import get_api_keys
 from app.middleware.request_logging import hash_api_key, get_client_ip
 
 logger = structlog.get_logger()
 
 # In-memory cache of valid API keys
 _api_keys_cache: Set[str] = set()
-_refresh_task: asyncio.Task | None = None
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -162,9 +158,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return token in _api_keys_cache
 
 
-async def load_api_keys() -> None:
+def load_api_keys() -> None:
     """
-    Load API keys from Secrets Manager into cache.
+    Load API keys from environment variable into cache.
+
+    The API_KEYS environment variable is injected from a Kubernetes Secret,
+    which is synced from AWS Secrets Manager by External Secrets Operator (ESO).
+    ESO handles automatic refresh (default: 1 hour), so no background refresh
+    task is needed in the application.
 
     This should be called on application startup.
 
@@ -175,69 +176,9 @@ async def load_api_keys() -> None:
 
     try:
         logger.info("loading_api_keys")
-        keys = await fetch_api_keys()
+        keys = get_api_keys()
         _api_keys_cache = set(keys)
         logger.info("api_keys_loaded", count=len(_api_keys_cache))
     except Exception as e:
         logger.error("api_keys_load_failed", error=str(e))
         raise
-
-
-async def refresh_api_keys_periodically() -> None:
-    """
-    Background task to refresh API keys periodically.
-
-    Runs indefinitely, refreshing keys at configured interval.
-    Handles errors gracefully to avoid crashing the application.
-    """
-    global _api_keys_cache
-
-    logger.info(
-        "key_refresh_task_starting",
-        interval_seconds=config.key_refresh_interval_seconds,
-    )
-
-    while True:
-        try:
-            # Wait for configured interval
-            await asyncio.sleep(config.key_refresh_interval_seconds)
-
-            # Fetch fresh keys
-            logger.debug("refreshing_api_keys")
-            keys = await fetch_api_keys()
-
-            # Update cache atomically
-            _api_keys_cache = set(keys)
-            logger.info("api_keys_refreshed", count=len(_api_keys_cache))
-
-        except Exception as e:
-            # Log error but continue running
-            logger.error("api_keys_refresh_failed", error=str(e))
-
-
-def start_key_refresh_task() -> None:
-    """
-    Start the background task for periodic API key refresh.
-
-    This should be called on application startup after initial key load.
-    """
-    global _refresh_task
-
-    if _refresh_task is None or _refresh_task.done():
-        _refresh_task = asyncio.create_task(refresh_api_keys_periodically())
-        logger.info("key_refresh_task_started")
-    else:
-        logger.warning("key_refresh_task_already_running")
-
-
-def stop_key_refresh_task() -> None:
-    """
-    Stop the background task for periodic API key refresh.
-
-    This should be called on application shutdown.
-    """
-    global _refresh_task
-
-    if _refresh_task and not _refresh_task.done():
-        _refresh_task.cancel()
-        logger.info("key_refresh_task_stopped")

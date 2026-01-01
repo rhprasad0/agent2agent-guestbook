@@ -8,10 +8,10 @@ A production-ready guestbook application implementing the Agent-to-Agent (A2A) p
 
 - **A2A Protocol Compliance**: Full implementation of agent-to-agent communication standard
 - **RESTful API**: Create, retrieve, and list guestbook messages
-- **Authentication**: Bearer token authentication with AWS Secrets Manager
+- **Authentication**: Bearer token authentication with API keys (via K8s Secrets)
 - **Rate Limiting**: 10 requests per minute per API key
 - **Public Web Interface**: Clean, responsive UI with auto-refresh
-- **AWS Integration**: DynamoDB for storage, Secrets Manager for API keys
+- **AWS Integration**: DynamoDB for storage, External Secrets Operator for API keys
 - **Production Ready**: Docker support, health checks, structured logging
 - **Security**: Non-root container, input validation, XSS protection
 
@@ -28,7 +28,7 @@ FastAPI Application
 │   └── Static File Server (/)
 └── Service Layer
     ├── DynamoDB Service
-    └── Secrets Manager Service
+    └── API Keys (from environment variable)
 ```
 
 ## Quick Start
@@ -48,7 +48,6 @@ This application depends on infrastructure provisioned in the **Main DevOps Lab 
 2.  Note the following outputs from that deployment:
     - `aws_region`
     - `dynamodb_table_name`
-    - `secret_name` (for API keys)
 
 ### 2. Configure Environment
 
@@ -57,10 +56,10 @@ This application depends on infrastructure provisioned in the **Main DevOps Lab 
 cp .env.example .env
 
 # Edit .env with your AWS configuration
-# Replace placeholders with actual values from the main repo infrastructure
+# API_KEYS is a JSON array of valid API keys
 export AWS_REGION=us-east-1
-export DYNAMODB_TABLE_NAME=...
-export API_KEYS_SECRET_NAME=...
+export DYNAMODB_TABLE_NAME=a2a-guestbook-messages
+export API_KEYS='["your-api-key-1","your-api-key-2"]'
 ```
 
 ### 3. Install Dependencies
@@ -97,7 +96,7 @@ docker run -d \
   -p 8000:8000 \
   -e AWS_REGION=us-east-1 \
   -e DYNAMODB_TABLE_NAME=a2a-guestbook-messages \
-  -e API_KEYS_SECRET_NAME=a2a-guestbook/api-keys \
+  -e API_KEYS='["your-api-key-1","your-api-key-2"]' \
   -e AWS_ACCESS_KEY_ID=your_access_key \
   -e AWS_SECRET_ACCESS_KEY=your_secret_key \
   a2a-guestbook:latest
@@ -122,7 +121,7 @@ docker run -d \
 |----------|-------------|---------|
 | `AWS_REGION` | AWS region for resources | `us-east-1` |
 | `DYNAMODB_TABLE_NAME` | DynamoDB table name | `a2a-guestbook-messages` |
-| `API_KEYS_SECRET_NAME` | Secrets Manager secret name | `a2a-guestbook/api-keys` |
+| `API_KEYS` | JSON array of valid API keys | `["key1","key2"]` |
 
 ### Optional (with defaults)
 
@@ -131,7 +130,10 @@ docker run -d \
 | `RATE_LIMIT_PER_MINUTE` | Rate limit per API key | `10` |
 | `LOG_LEVEL` | Logging level | `INFO` |
 | `PORT` | Application port | `8000` |
-| `KEY_REFRESH_INTERVAL_SECONDS` | API key refresh interval | `300` |
+
+### Kubernetes Deployment
+
+In Kubernetes, `API_KEYS` is injected from a Secret that is synced from AWS Secrets Manager by [External Secrets Operator](https://external-secrets.io/). See `k8s/guestbook/external-secret.yaml` for the ExternalSecret configuration.
 
 ## API Documentation
 
@@ -215,18 +217,12 @@ curl http://localhost:8000/health
 - `message_text`: String (1-280 characters)
 - `metadata`: Map (optional)
 
-### Secrets Manager Secret Format
+### API Keys Format
 
-**Secret Name**: `a2a-guestbook/api-keys`
+The `API_KEYS` environment variable must be a JSON array of strings:
 
-**Format**:
 ```json
-{
-  "api_keys": [
-    "your-secure-api-key-1",
-    "your-secure-api-key-2"
-  ]
-}
+["your-secure-api-key-1", "your-secure-api-key-2"]
 ```
 
 Generate secure keys:
@@ -234,21 +230,16 @@ Generate secure keys:
 openssl rand -hex 32
 ```
 
+**In Kubernetes**: API keys are stored in AWS Secrets Manager and synced to a K8s Secret by External Secrets Operator. The application reads them from the `API_KEYS` environment variable injected from that Secret.
+
 ### IAM Permissions Required
 
-The application needs these IAM permissions:
+The application needs these IAM permissions for DynamoDB:
 
 ```json
 {
   "Version": "2012-10-17",
   "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "secretsmanager:GetSecretValue"
-      ],
-      "Resource": "arn:aws:secretsmanager:REGION:ACCOUNT:secret:a2a-guestbook/api-keys*"
-    },
     {
       "Effect": "Allow",
       "Action": [
@@ -264,6 +255,8 @@ The application needs these IAM permissions:
   ]
 }
 ```
+
+**Note**: The application no longer needs `secretsmanager:GetSecretValue` permission. API keys are injected via environment variable from a K8s Secret (synced by External Secrets Operator).
 
 ## Development
 
@@ -284,7 +277,7 @@ The application needs these IAM permissions:
 │   │   └── public.py        # Public endpoints
 │   ├── services/
 │   │   ├── dynamodb.py      # DynamoDB operations
-│   │   └── secrets.py       # Secrets Manager operations
+│   │   └── secrets.py       # API key loading from environment
 │   └── static/
 │       ├── index.html       # Web UI
 │       └── style.css        # Styling
@@ -357,7 +350,7 @@ curl -X POST http://localhost:8000/api/v1/messages \
 
 ## Security Considerations
 
-- **API Keys**: Store securely in AWS Secrets Manager, never commit to version control
+- **API Keys**: Store securely in AWS Secrets Manager (synced to K8s via ESO), never commit to version control
 - **Rate Limiting**: Prevents abuse with 10 requests/minute per key
 - **Input Validation**: Pydantic models validate all input
 - **XSS Protection**: HTML escaping in web UI
@@ -388,16 +381,15 @@ The `/health` endpoint is suitable for:
 - Error rate (4xx, 5xx responses)
 - Response latency (p50, p95, p99)
 - DynamoDB throttling events
-- API key refresh failures
 
 ## Troubleshooting
 
 ### Application won't start
 
-**Error**: "Failed to load API keys"
-- Check AWS credentials are configured
-- Verify Secrets Manager secret exists and is accessible
-- Check IAM permissions for `secretsmanager:GetSecretValue`
+**Error**: "Failed to load API keys" or "Invalid JSON in API_KEYS"
+- Verify `API_KEYS` environment variable is set
+- Ensure it's a valid JSON array: `["key1","key2"]`
+- In Kubernetes, check that the ExternalSecret has synced successfully
 
 **Error**: "DynamoDB error"
 - Verify DynamoDB table exists
@@ -406,9 +398,9 @@ The `/health` endpoint is suitable for:
 
 ### Authentication failures
 
-- Verify API key is in Secrets Manager secret
-- Check secret format: `{"api_keys": ["key1", "key2"]}`
-- Wait up to 5 minutes for key refresh after updating secret
+- Verify API key is in the `API_KEYS` environment variable
+- Check format: `["key1", "key2"]` (JSON array)
+- In Kubernetes, wait for ESO to sync after updating the secret in Secrets Manager (default: 1 hour)
 - Check Authorization header format: `Bearer YOUR_KEY`
 
 ### Rate limiting issues

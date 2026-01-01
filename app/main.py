@@ -23,8 +23,6 @@ from app.middleware import (
     AuthMiddleware,
     RequestLoggingMiddleware,
     load_api_keys,
-    start_key_refresh_task,
-    stop_key_refresh_task,
     limiter,
 )
 from app.routers import a2a_router, public_router
@@ -60,9 +58,8 @@ async def lifespan(app: FastAPI):
     Application lifespan manager for startup and shutdown events.
 
     Handles:
-    - Loading API keys from Secrets Manager on startup
-    - Starting background task for periodic key refresh
-    - Cleanup on shutdown
+    - Loading API keys from environment variable on startup
+      (injected from K8s Secret, synced by External Secrets Operator)
     """
     # Startup
     logger.info("application_starting")
@@ -74,13 +71,9 @@ async def lifespan(app: FastAPI):
     )
 
     try:
-        # Load API keys from Secrets Manager
-        await load_api_keys()
+        # Load API keys from environment variable (injected by K8s Secret)
+        load_api_keys()
         logger.info("api_keys_loaded")
-
-        # Start background task for periodic key refresh
-        start_key_refresh_task()
-        logger.info("key_refresh_task_started")
 
     except Exception as e:
         logger.error("initialization_failed", error=str(e))
@@ -92,7 +85,6 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("application_shutting_down")
-    stop_key_refresh_task()
     logger.info("application_shutdown_complete")
 
 
